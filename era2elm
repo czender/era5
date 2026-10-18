@@ -345,7 +345,7 @@ function var2drc {
     local drc_nm_crr
     if [ ${1} = 'mcpr' ] || [ ${1} = 'mlspr' ]; then
         drc_nm_crr='prec'
-    elif [ ${1} = 't2m' ]; then
+    elif [ ${1} = 't2m' ] || [ ${1} = 't' ]; then
         drc_nm_crr='tbot'
     elif [ ${1} = 'd2m' ]; then
         drc_nm_crr='tdew'
@@ -390,7 +390,7 @@ function var2cll_mth {
     # Adam: In CIME, there’re different options for time-interpolating the forcing variables. I configured ELMERA5 to linearly interpolate the instantaneous variables. For accumulated variables, CIME will use the “upper” value with a small time shift applied so that at, say, t_0, ELM will use ERA5 variables from t_1. In other words. On Jan 1 at 00:00 UTC, CIME will use the 00:00 UTC data for ERA5 instantaneous values but 01:00 UTC data for ERA5 accumulated values. At 00:30, CIME will interpolate ERA5 instantaneous but will still use 01:00 UTC data for ERA5 accumulated values. Downwelling Shortwave is weighted a little differently by CIME but follows the same convention in ERA5.
 
     local cll_mth_crr
-    if [ ${1} = 'd2m' ] || [ ${1} = 'sp' ] || [ ${1} = 't2m' ] || [ ${1} = 'u10' ] || [ ${1} = 'v10' ] || [ ${1} = 'w10' ]; then
+    if [ ${1} = 'd2m' ] || [ ${1} = 'sp' ] || [ ${1} = 't2m' ] || [ ${1} = 't' ] || [ ${1} = 'u10' ] || [ ${1} = 'v10' ] || [ ${1} = 'w10' ]; then
         cll_mth_crr='time: point'
     elif [ ${1} = 'mcpr' ] || [ ${1} = 'mlspr' ] || [ ${1} = 'msdfswrf' ] || [ ${1} = 'msdrswrf' ] || [ ${1} = 'msdwlwrf' ] || [ ${1} = 'msdwswrf' ]; then
         cll_mth_crr='time: mean'
@@ -946,7 +946,7 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 
 	cmd_rdr[${clm_idx}]="ncpdq -O --no_tmp_fl --reorder=-latitude ${hyp_opt[${clm_idx}]} ${fl_in[${fl_idx}]} ${fl_var_mth[${clm_idx}]}"
 	#echo "cmd_rdr = ${cmd_rdr[${clm_idx}]}"
-	cmd_upk[${clm_idx}]="ncpdq -O --unpack ${fl_var_mth[${clm_idx}]} ${fl_var_mth[${clm_idx}]}"
+	cmd_upk[${clm_idx}]="ncatted -O --attribute=_FillValue,,d,, --attribute=missing_value,,d,, ${fl_var_mth[${clm_idx}]};ncpdq -O --unpack ${fl_var_mth[${clm_idx}]} ${fl_var_mth[${clm_idx}]}" # L136: delete fill attributes before unpack to avoid NC_EBADTYPE from grib_to_netcdf 2.46
 	#echo "cmd_upk = ${cmd_upk[${clm_idx}]}"
 	cmd_d2f[${clm_idx}]="ncpdq -O --map=dbl_flt ${fl_var_mth[${clm_idx}]} ${fl_var_mth[${clm_idx}]}"
 	#echo "cmd_d2f = ${cmd_d2f[${clm_idx}]}"
