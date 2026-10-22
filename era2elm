@@ -349,6 +349,8 @@ function var2drc {
         drc_nm_crr='tbot'
     elif [ ${1} = 'd2m' ]; then
         drc_nm_crr='tdew'
+    elif [ ${1} = 'q' ]; then
+        drc_nm_crr='qbot'
     elif [ ${1} = 'sp' ]; then
         drc_nm_crr='pbot'
     elif [ ${1} = 'msdwlwrf' ]; then
@@ -371,6 +373,7 @@ function var2cll_mth {
     # sp  = Surface pressure
     # t2m = 2m temperature
     # t   = Temperature on model level (e.g., L136, ~30 m)
+    # q   = Specific humidity on model level (e.g., L136, ~30 m)
     # u10 = 10m u-component of wind
     # v10 = 10m v-component of wind
 
@@ -391,7 +394,7 @@ function var2cll_mth {
     # Adam: In CIME, there’re different options for time-interpolating the forcing variables. I configured ELMERA5 to linearly interpolate the instantaneous variables. For accumulated variables, CIME will use the “upper” value with a small time shift applied so that at, say, t_0, ELM will use ERA5 variables from t_1. In other words. On Jan 1 at 00:00 UTC, CIME will use the 00:00 UTC data for ERA5 instantaneous values but 01:00 UTC data for ERA5 accumulated values. At 00:30, CIME will interpolate ERA5 instantaneous but will still use 01:00 UTC data for ERA5 accumulated values. Downwelling Shortwave is weighted a little differently by CIME but follows the same convention in ERA5.
 
     local cll_mth_crr
-    if [ ${1} = 'd2m' ] || [ ${1} = 'sp' ] || [ ${1} = 't2m' ] || [ ${1} = 't' ] || [ ${1} = 'u10' ] || [ ${1} = 'v10' ] || [ ${1} = 'w10' ]; then
+    if [ ${1} = 'd2m' ] || [ ${1} = 'sp' ] || [ ${1} = 't2m' ] || [ ${1} = 't' ] || [ ${1} = 'q' ] || [ ${1} = 'u10' ] || [ ${1} = 'v10' ] || [ ${1} = 'w10' ]; then
         cll_mth_crr='time: point'
     elif [ ${1} = 'mcpr' ] || [ ${1} = 'mlspr' ] || [ ${1} = 'msdfswrf' ] || [ ${1} = 'msdrswrf' ] || [ ${1} = 'msdwlwrf' ] || [ ${1} = 'msdwswrf' ]; then
         cll_mth_crr='time: mean'
@@ -1112,6 +1115,9 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 	echo "Elapsed time to hyperslab and reorder monthly ${drc_nm[${fl_idx}]} field ${var_nm[${fl_idx}]} for year ${yyyy} = $((date_dff/60))m$((date_dff % 60))s"
     fi # !dbg
     
+    # 20261022: Eliminate missing value attributes before unpacking (formerly the last step, Step 7)
+    # grib_to_netcdf 2.46 packed data carry _FillValue/missing_value attributes that make ncpdq --unpack fail with NC_EBADTYPE
+    # Removing them (and setting cell_methods) once here avoids repeating the same attribute operations later
     printf "\nStep 2: Eliminate missing value attributes\n"
     [[ ${dbg_lvl} -ge 1 ]] && date_msv=$(date +"%s")
     let bch_nbr=$((12 / job_nbr))
