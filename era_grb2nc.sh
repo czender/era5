@@ -7,7 +7,7 @@ mkdir -p $TMP
 
 for f in $SRC/DATM_L136_*.grib; do
   yr=$(basename $f .grib | sed 's/DATM_L136_//')
-  # 只处理文件名是 DATM_L136_四位年份.grib 的文件
+  # Only process files named DATM_L136_YYYY.grib
   [[ $yr =~ ^[0-9]{4}$ ]] || { echo "skip $f"; continue; }
   [ -s "$f" ] || { echo "$yr EMPTY grib" | tee -a $LOG; continue; }
 
