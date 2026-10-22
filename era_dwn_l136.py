@@ -7,9 +7,9 @@ regridded by MARS to a regular 0.25 x 0.25 degree grid. One GRIB file per year.
 Requires a CDS account with MARS access and credentials in ~/.cdsapirc.
 
 Usage:
-    python download_l136.py 2000                  # one year
-    python download_l136.py 2000 2002 2005        # selected years
-    python download_l136.py 1976-2025 --out /path/to/DATM_data
+    python era_dwn_l136.py 2000                  # one year
+    python era_dwn_l136.py 2000 2002 2005        # selected years
+    python era_dwn_l136.py 1976-2025 --out /path/to/DATM_data
 """
 import argparse
 import os
