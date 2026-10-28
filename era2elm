@@ -345,10 +345,12 @@ function var2drc {
     local drc_nm_crr
     if [ ${1} = 'mcpr' ] || [ ${1} = 'mlspr' ]; then
         drc_nm_crr='prec'
-    elif [ ${1} = 't2m' ]; then
+    elif [ ${1} = 't2m' ] || [ ${1} = 't' ]; then
         drc_nm_crr='tbot'
     elif [ ${1} = 'd2m' ]; then
         drc_nm_crr='tdew'
+    elif [ ${1} = 'q' ]; then
+        drc_nm_crr='qbot'
     elif [ ${1} = 'sp' ]; then
         drc_nm_crr='pbot'
     elif [ ${1} = 'msdwlwrf' ]; then
@@ -370,6 +372,8 @@ function var2cll_mth {
     # d2m = 2m dew point temperature
     # sp  = Surface pressure
     # t2m = 2m temperature
+    # t   = Temperature on model level (e.g., L136, ~30 m)
+    # q   = Specific humidity on model level (e.g., L136, ~30 m)
     # u10 = 10m u-component of wind
     # v10 = 10m v-component of wind
 
@@ -390,7 +394,7 @@ function var2cll_mth {
     # Adam: In CIME, there’re different options for time-interpolating the forcing variables. I configured ELMERA5 to linearly interpolate the instantaneous variables. For accumulated variables, CIME will use the “upper” value with a small time shift applied so that at, say, t_0, ELM will use ERA5 variables from t_1. In other words. On Jan 1 at 00:00 UTC, CIME will use the 00:00 UTC data for ERA5 instantaneous values but 01:00 UTC data for ERA5 accumulated values. At 00:30, CIME will interpolate ERA5 instantaneous but will still use 01:00 UTC data for ERA5 accumulated values. Downwelling Shortwave is weighted a little differently by CIME but follows the same convention in ERA5.
 
     local cll_mth_crr
-    if [ ${1} = 'd2m' ] || [ ${1} = 'sp' ] || [ ${1} = 't2m' ] || [ ${1} = 'u10' ] || [ ${1} = 'v10' ] || [ ${1} = 'w10' ]; then
+    if [ ${1} = 'd2m' ] || [ ${1} = 'sp' ] || [ ${1} = 't2m' ] || [ ${1} = 't' ] || [ ${1} = 'q' ] || [ ${1} = 'u10' ] || [ ${1} = 'v10' ] || [ ${1} = 'w10' ]; then
         cll_mth_crr='time: point'
     elif [ ${1} = 'mcpr' ] || [ ${1} = 'mlspr' ] || [ ${1} = 'msdfswrf' ] || [ ${1} = 'msdrswrf' ] || [ ${1} = 'msdwlwrf' ] || [ ${1} = 'msdwswrf' ]; then
         cll_mth_crr='time: mean'
@@ -1111,7 +1115,55 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 	echo "Elapsed time to hyperslab and reorder monthly ${drc_nm[${fl_idx}]} field ${var_nm[${fl_idx}]} for year ${yyyy} = $((date_dff/60))m$((date_dff % 60))s"
     fi # !dbg
     
-    printf "\nStep 2: Unpack...\n"
+    # 20261022: Eliminate missing value attributes before unpacking (formerly the last step, Step 7)
+    # grib_to_netcdf 2.46 packed data carry _FillValue/missing_value attributes that make ncpdq --unpack fail with NC_EBADTYPE
+    # Removing them (and setting cell_methods) once here avoids repeating the same attribute operations later
+    printf "\nStep 2: Eliminate missing value attributes\n"
+    [[ ${dbg_lvl} -ge 1 ]] && date_msv=$(date +"%s")
+    let bch_nbr=$((12 / job_nbr))
+    for ((bch_idx=0;bch_idx<bch_nbr;bch_idx++)); do
+	# clm_idx is 1-based, bch_idx is 0-based
+	let clm_idx_srt=$(((bch_idx * job_nbr) + 1))
+	let clm_idx_end=$((clm_idx_srt + job_nbr - 1))
+	for ((clm_idx=clm_idx_srt;clm_idx<=clm_idx_end;clm_idx++)); do
+	    printf "Eliminate missing value attributes for ${drc_nm[${fl_idx}]} field ${var_nm[${fl_idx}]} for year ${yyyy} month ${clm_idx} ...\n"
+	    if [ ${dbg_lvl} -ge 1 ]; then
+		echo ${cmd_msv[${clm_idx}]}
+	    fi # !dbg
+	    if [ ${dbg_lvl} -le 1 ]; then
+		if [ -z "${par_opt}" ]; then
+		    eval ${cmd_msv[${clm_idx}]}
+		    if [ "$?" -ne 0 ]; then
+			printf "${spt_nm}: ERROR monthly missing value command cmd_msv[${clm_idx}] failed. Debug this:\n${cmd_msv[${clm_idx}]}\n"
+			exit 1
+		    fi # !err
+		else # !par_opt
+		    eval ${cmd_msv[${clm_idx}]} ${par_opt} # eval always returns 0 on backgrounded processes
+		    msv_pid[${clm_idx}]=$!
+		fi # !par_opt
+	    fi # !dbg
+	done # !clm_idx
+	if [ -n "${par_opt}" ]; then
+	    for ((clm_idx=clm_idx_srt;clm_idx<=clm_idx_end;clm_idx++)); do
+		wait ${msv_pid[${clm_idx}]}
+		if [ "$?" -ne 0 ]; then
+		    printf "${spt_nm}: ERROR monthly missing value cmd_msv[${clm_idx}] failed. Debug this:\n${cmd_msv[${clm_idx}]}\n"
+		    # 20200805: exiting parent here creates orphans, kill live children then exit
+		    for ((kid_idx=clm_idx+1;kid_idx<=clm_idx_end;kid_idx++)); do
+			kill -9 ${msv_pid[${kid_idx}]}
+		    done # !kid_idx
+		    exit 1
+		fi # !err
+	    done # !clm_idx
+	fi # !par_opt
+    done # !bch_idx
+    if [ ${dbg_lvl} -ge 1 ]; then
+	date_crr=$(date +"%s")
+	date_dff=$((date_crr-date_msv))
+	echo "Elapsed time to eliminate missing value attributes for monthly ${drc_nm[${fl_idx}]} field ${var_nm[${fl_idx}]} for year ${yyyy} = $((date_dff/60))m$((date_dff % 60))s"
+    fi # !dbg
+
+    printf "\nStep 3: Unpack...\n"
     [[ ${dbg_lvl} -ge 1 ]] && date_upk=$(date +"%s")
     let bch_nbr=$((12 / job_nbr))
     for ((bch_idx=0;bch_idx<bch_nbr;bch_idx++)); do
@@ -1156,7 +1208,7 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 	echo "Elapsed time to unpack monthly ${drc_nm[${fl_idx}]} field ${var_nm[${fl_idx}]} for year ${yyyy} = $((date_dff/60))m$((date_dff % 60))s"
     fi # !dbg
     
-    printf "\nStep 3: Demote double precision to single precision...\n"
+    printf "\nStep 4: Demote double precision to single precision...\n"
     [[ ${dbg_lvl} -ge 1 ]] && date_d2f=$(date +"%s")
     let bch_nbr=$((12 / job_nbr))
     for ((bch_idx=0;bch_idx<bch_nbr;bch_idx++)); do
@@ -1201,7 +1253,7 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 	echo "Elapsed time to demote monthly ${drc_nm[${fl_idx}]} field ${var_nm[${fl_idx}]} for year ${yyyy} = $((date_dff/60))m$((date_dff % 60))s"
     fi # !dbg
 
-    printf "\nStep 4: Rename coordinates...\n"
+    printf "\nStep 5: Rename coordinates...\n"
     [[ ${dbg_lvl} -ge 1 ]] && date_rnm=$(date +"%s")
     let bch_nbr=$((12 / job_nbr))
     for ((bch_idx=0;bch_idx<bch_nbr;bch_idx++)); do
@@ -1246,7 +1298,7 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 	echo "Elapsed time to rename coordinates in monthly ${drc_nm[${fl_idx}]} field ${var_nm[${fl_idx}]} for year ${yyyy} = $((date_dff/60))m$((date_dff % 60))s"
     fi # !dbg
     
-    printf "\nStep 5: Implement noleap calendar...\n"
+    printf "\nStep 6: Implement noleap calendar...\n"
     [[ ${dbg_lvl} -ge 1 ]] && date_nlp=$(date +"%s")
     let bch_nbr=$((12 / job_nbr))
     for ((bch_idx=0;bch_idx<bch_nbr;bch_idx++)); do
@@ -1291,7 +1343,7 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 	echo "Elapsed time to noleap calendar for monthly ${drc_nm[${fl_idx}]} field ${var_nm[${fl_idx}]} for year ${yyyy} = $((date_dff/60))m$((date_dff % 60))s"
     fi # !dbg
 
-    printf "\nStep 6: Make record dimension, remove transient variables...\n"
+    printf "\nStep 7: Make record dimension, remove transient variables...\n"
     [[ ${dbg_lvl} -ge 1 ]] && date_rcd=$(date +"%s")
     let bch_nbr=$((12 / job_nbr))
     for ((bch_idx=0;bch_idx<bch_nbr;bch_idx++)); do
@@ -1334,51 +1386,6 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 	date_crr=$(date +"%s")
 	date_dff=$((date_crr-date_rcd))
 	echo "Elapsed time to convert time to record dimension for monthly ${drc_nm[${fl_idx}]} field ${var_nm[${fl_idx}]} for year ${yyyy} = $((date_dff/60))m$((date_dff % 60))s"
-    fi # !dbg
-
-    printf "\nStep 7: Eliminate missing value attributes\n"
-    [[ ${dbg_lvl} -ge 1 ]] && date_msv=$(date +"%s")
-    let bch_nbr=$((12 / job_nbr))
-    for ((bch_idx=0;bch_idx<bch_nbr;bch_idx++)); do
-	# clm_idx is 1-based, bch_idx is 0-based
-	let clm_idx_srt=$(((bch_idx * job_nbr) + 1))
-	let clm_idx_end=$((clm_idx_srt + job_nbr - 1))
-	for ((clm_idx=clm_idx_srt;clm_idx<=clm_idx_end;clm_idx++)); do
-	    printf "Eliminate missing value attributes for ${drc_nm[${fl_idx}]} field ${var_nm[${fl_idx}]} for year ${yyyy} month ${clm_idx} ...\n"
-	    if [ ${dbg_lvl} -ge 1 ]; then
-		echo ${cmd_msv[${clm_idx}]}
-	    fi # !dbg
-	    if [ ${dbg_lvl} -le 1 ]; then
-		if [ -z "${par_opt}" ]; then
-		    eval ${cmd_msv[${clm_idx}]}
-		    if [ "$?" -ne 0 ]; then
-			printf "${spt_nm}: ERROR monthly missing value command cmd_msv[${clm_idx}] failed. Debug this:\n${cmd_msv[${clm_idx}]}\n"
-			exit 1
-		    fi # !err
-		else # !par_opt
-		    eval ${cmd_msv[${clm_idx}]} ${par_opt} # eval always returns 0 on backgrounded processes
-		    msv_pid[${clm_idx}]=$!
-		fi # !par_opt
-	    fi # !dbg
-	done # !clm_idx
-	if [ -n "${par_opt}" ]; then
-	    for ((clm_idx=clm_idx_srt;clm_idx<=clm_idx_end;clm_idx++)); do
-		wait ${msv_pid[${clm_idx}]}
-		if [ "$?" -ne 0 ]; then
-		    printf "${spt_nm}: ERROR monthly missing value cmd_msv[${clm_idx}] failed. Debug this:\n${cmd_msv[${clm_idx}]}\n"
-		    # 20200805: exiting parent here creates orphans, kill live children then exit
-		    for ((kid_idx=clm_idx+1;kid_idx<=clm_idx_end;kid_idx++)); do
-			kill -9 ${msv_pid[${kid_idx}]}
-		    done # !kid_idx
-		    exit 1
-		fi # !err
-	    done # !clm_idx
-	fi # !par_opt
-    done # !bch_idx
-    if [ ${dbg_lvl} -ge 1 ]; then
-	date_crr=$(date +"%s")
-	date_dff=$((date_crr-date_msv))
-	echo "Elapsed time to eliminate missing value attributes for monthly ${drc_nm[${fl_idx}]} field ${var_nm[${fl_idx}]} for year ${yyyy} = $((date_dff/60))m$((date_dff % 60))s"
     fi # !dbg
 
     if [ ${dbg_lvl} -ge 0 ]; then
