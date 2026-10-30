@@ -357,7 +357,7 @@ function var2drc {
         drc_nm_crr='lwdn'
     elif [ ${1} = 'msdfswrf' ] || [ ${1} = 'msdrswrf' ] || [ ${1} = 'msdwswrf' ]; then
         drc_nm_crr='swdn'
-    elif [ ${1} = 'u10' ] || [ ${1} = 'v10' ] || [ ${1} = 'w10' ]; then
+    elif [ ${1} = 'u10' ] || [ ${1} = 'v10' ] || [ ${1} = 'w10' ] || [ ${1} = 'u' ] || [ ${1} = 'v' ] || [ ${1} = 'w' ]; then
         drc_nm_crr='wind'
     else
 	echo "${spt_nm}: ERROR Unknown ERA5 variable name = \"${1}\" in function var2drc()"
@@ -387,6 +387,8 @@ function var2cll_mth {
     # Fields derived from ERA5:
     # msdfswrf = Mean surface diffuse shortwave radiation flux
     # w10 = 10m wind speed
+    # u, v = Wind components on model level (e.g., L136, ~30 m)
+    # w   = Wind speed on model level, derived as sqrt(u^2+v^2)
 
     # 20230208: Slack discussion on meaning of instantaneous and accumulated variables:
     # https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation#heading-Instantaneousparameters
@@ -394,7 +396,7 @@ function var2cll_mth {
     # Adam: In CIME, there’re different options for time-interpolating the forcing variables. I configured ELMERA5 to linearly interpolate the instantaneous variables. For accumulated variables, CIME will use the “upper” value with a small time shift applied so that at, say, t_0, ELM will use ERA5 variables from t_1. In other words. On Jan 1 at 00:00 UTC, CIME will use the 00:00 UTC data for ERA5 instantaneous values but 01:00 UTC data for ERA5 accumulated values. At 00:30, CIME will interpolate ERA5 instantaneous but will still use 01:00 UTC data for ERA5 accumulated values. Downwelling Shortwave is weighted a little differently by CIME but follows the same convention in ERA5.
 
     local cll_mth_crr
-    if [ ${1} = 'd2m' ] || [ ${1} = 'sp' ] || [ ${1} = 't2m' ] || [ ${1} = 't' ] || [ ${1} = 'q' ] || [ ${1} = 'u10' ] || [ ${1} = 'v10' ] || [ ${1} = 'w10' ]; then
+    if [ ${1} = 'd2m' ] || [ ${1} = 'sp' ] || [ ${1} = 't2m' ] || [ ${1} = 't' ] || [ ${1} = 'q' ] || [ ${1} = 'u10' ] || [ ${1} = 'v10' ] || [ ${1} = 'w10' ] || [ ${1} = 'u' ] || [ ${1} = 'v' ] || [ ${1} = 'w' ]; then
         cll_mth_crr='time: point'
     elif [ ${1} = 'mcpr' ] || [ ${1} = 'mlspr' ] || [ ${1} = 'msdfswrf' ] || [ ${1} = 'msdrswrf' ] || [ ${1} = 'msdwlwrf' ] || [ ${1} = 'msdwswrf' ]; then
         cll_mth_crr='time: mean'
@@ -1032,7 +1034,9 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 	    cmd_t2m[${clm_idx}]="ncap2 -O --no_tmp_fl -s 't2m-=0.182' ${fl_t2m_mth[${clm_idx}]} ${fl_t2m_mth[${clm_idx}]}"
 	fi # !t2m
 
-	if [ ${var_nm[${fl_idx}]} = 'u10' ]; then
+	if [ ${var_nm[${fl_idx}]} = 'u10' ] || [ ${var_nm[${fl_idx}]} = 'u' ]; then
+	    # Wind component names: 10 m (u10,v10->w10) or model level, e.g., L136 (u,v->w)
+	    if [ ${var_nm[${fl_idx}]} = 'u' ]; then wnd_u='u'; wnd_v='v'; wnd_w='w'; wnd_lng='Wind speed at model level (e.g., L136, ~30 m)'; else wnd_u='u10'; wnd_v='v10'; wnd_w='w10'; wnd_lng='10 metre windspeed'; fi
 	    # Define required filenames/commands iff current input file is u10
 	    # This avoids repetition
 	    # Commands and filenames will be used iff both u10 and v10 are encountered
@@ -1045,14 +1049,14 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 	    # NB: This "shorter" procedure requires only three commands and no extra (temporary) files
 
 	    # Construct filenames needed for derived fields
-	    fl_u10_mth[${clm_idx}]="${drc_out}/${drc_nm_wind}/${out_nm}.u10.${yyyy}-${mm}.nc"
-	    fl_v10_mth[${clm_idx}]="${drc_out}/${drc_nm_wind}/${out_nm}.v10.${yyyy}-${mm}.nc"
-	    fl_w10_mth[${clm_idx}]="${drc_out}/${drc_nm_wind}/${out_nm}.w10.${yyyy}-${mm}.nc"
+	    fl_u10_mth[${clm_idx}]="${drc_out}/${drc_nm_wind}/${out_nm}.${wnd_u}.${yyyy}-${mm}.nc"
+	    fl_v10_mth[${clm_idx}]="${drc_out}/${drc_nm_wind}/${out_nm}.${wnd_v}.${yyyy}-${mm}.nc"
+	    fl_w10_mth[${clm_idx}]="${drc_out}/${drc_nm_wind}/${out_nm}.${wnd_w}.${yyyy}-${mm}.nc"
 
 	    cmd_wn0[${clm_idx}]="/bin/cp ${fl_v10_mth[${clm_idx}]} ${fl_w10_mth[${clm_idx}]}"
-	    cmd_wn1[${clm_idx}]="ncks -A --no_tmp_fl -C -v u10 ${fl_u10_mth[${clm_idx}]} ${fl_w10_mth[${clm_idx}]}"
-	    cmd_wn2[${clm_idx}]="ncap2 -O --no_tmp_fl -s 'w10=sqrt(u10^2+v10^2);w10@long_name=\"10 metre windspeed\"' ${fl_w10_mth[${clm_idx}]} ${fl_w10_mth[${clm_idx}]}"
-	    cmd_wn3[${clm_idx}]="ncks -O -x -v u10,v10 ${fl_w10_mth[${clm_idx}]} ${fl_w10_mth[${clm_idx}]}"
+	    cmd_wn1[${clm_idx}]="/bin/cp ${fl_v10_mth[${clm_idx}]} ${fl_w10_mth[${clm_idx}]} \&\& ncks -A --no_tmp_fl -C -v ${wnd_u} ${fl_u10_mth[${clm_idx}]} ${fl_w10_mth[${clm_idx}]}"
+	    cmd_wn2[${clm_idx}]="ncap2 -O --no_tmp_fl -s '${wnd_w}=sqrt(${wnd_u}^2+${wnd_v}^2);${wnd_w}@long_name=\"${wnd_lng}\"' ${fl_w10_mth[${clm_idx}]} ${fl_w10_mth[${clm_idx}]}"
+	    cmd_wn3[${clm_idx}]="ncks -O -x -v ${wnd_u},${wnd_v} ${fl_w10_mth[${clm_idx}]} ${fl_w10_mth[${clm_idx}]}"
 #	    cmd_wn4[${clm_idx}]="/bin/rm -f ${fl_u10_mth[${clm_idx}]} ${fl_v10_mth[${clm_idx}]}"
 	fi # !u10
 
@@ -1556,10 +1560,10 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
     fi # !msdfswrf
 
     # Check whether necessary inputs to derive wind speed are present
-    if [ ${var_nm[${fl_idx}]} = 'v10' ]; then
+    if [ ${var_nm[${fl_idx}]} = 'v10' ] || [ ${var_nm[${fl_idx}]} = 'v' ]; then
 	v10[${yyyy}]='yes'
     fi # !var_nm
-    if [ ${var_nm[${fl_idx}]} = 'u10' ]; then
+    if [ ${var_nm[${fl_idx}]} = 'u10' ] || [ ${var_nm[${fl_idx}]} = 'u' ]; then
 	u10[${yyyy}]='yes'
     fi # !var_nm
 
