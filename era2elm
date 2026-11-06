@@ -1055,7 +1055,7 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 	    fl_wnd_w_mth[${clm_idx}]="${drc_out}/${drc_nm_wind}/${out_nm}.${wnd_w}.${yyyy}-${mm}.nc"
 
 	    cmd_wn1[${clm_idx}]="/bin/cp ${fl_wnd_v_mth[${clm_idx}]} ${fl_wnd_w_mth[${clm_idx}]} && ncks -A --no_tmp_fl -C -v ${wnd_u} ${fl_wnd_u_mth[${clm_idx}]} ${fl_wnd_w_mth[${clm_idx}]}"
-	    cmd_wn2[${clm_idx}]="ncap2 -O --no_tmp_fl -s '${wnd_w}=sqrt(${wnd_u}^2+${wnd_v}^2);${wnd_w}@long_name=\"${wnd_lng}\";${wnd_w}@standard_name=\"wind_speed\"' ${fl_wnd_w_mth[${clm_idx}]} ${fl_wnd_w_mth[${clm_idx}]}"
+	    cmd_wn2[${clm_idx}]="ncap2 -O -s '${wnd_w}=sqrt(${wnd_u}^2+${wnd_v}^2);${wnd_w}@long_name=\"${wnd_lng}\";${wnd_w}@standard_name=\"wind_speed\"' ${fl_wnd_w_mth[${clm_idx}]} ${fl_wnd_w_mth[${clm_idx}]}"
 	    cmd_wn3[${clm_idx}]="ncks -O -x -v ${wnd_u},${wnd_v} ${fl_wnd_w_mth[${clm_idx}]} ${fl_wnd_w_mth[${clm_idx}]}"
 #	    cmd_wn4[${clm_idx}]="/bin/rm -f ${fl_wnd_u_mth[${clm_idx}]} ${fl_wnd_v_mth[${clm_idx}]}"
 	fi # !u10
