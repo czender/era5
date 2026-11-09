@@ -357,7 +357,7 @@ function var2drc {
         drc_nm_crr='lwdn'
     elif [ ${1} = 'msdfswrf' ] || [ ${1} = 'msdrswrf' ] || [ ${1} = 'msdwswrf' ]; then
         drc_nm_crr='swdn'
-    elif [ ${1} = 'u10' ] || [ ${1} = 'v10' ] || [ ${1} = 'w10' ]; then
+    elif [ ${1} = 'u10' ] || [ ${1} = 'v10' ] || [ ${1} = 'w10' ] || [ ${1} = 'u' ] || [ ${1} = 'v' ] || [ ${1} = 'w' ]; then
         drc_nm_crr='wind'
     else
 	echo "${spt_nm}: ERROR Unknown ERA5 variable name = \"${1}\" in function var2drc()"
@@ -387,6 +387,8 @@ function var2cll_mth {
     # Fields derived from ERA5:
     # msdfswrf = Mean surface diffuse shortwave radiation flux
     # w10 = 10m wind speed
+    # u, v = Wind components on model level (e.g., L136, ~30 m)
+    # w   = Wind speed on model level, derived as sqrt(u^2+v^2)
 
     # 20230208: Slack discussion on meaning of instantaneous and accumulated variables:
     # https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation#heading-Instantaneousparameters
@@ -394,7 +396,7 @@ function var2cll_mth {
     # Adam: In CIME, there’re different options for time-interpolating the forcing variables. I configured ELMERA5 to linearly interpolate the instantaneous variables. For accumulated variables, CIME will use the “upper” value with a small time shift applied so that at, say, t_0, ELM will use ERA5 variables from t_1. In other words. On Jan 1 at 00:00 UTC, CIME will use the 00:00 UTC data for ERA5 instantaneous values but 01:00 UTC data for ERA5 accumulated values. At 00:30, CIME will interpolate ERA5 instantaneous but will still use 01:00 UTC data for ERA5 accumulated values. Downwelling Shortwave is weighted a little differently by CIME but follows the same convention in ERA5.
 
     local cll_mth_crr
-    if [ ${1} = 'd2m' ] || [ ${1} = 'sp' ] || [ ${1} = 't2m' ] || [ ${1} = 't' ] || [ ${1} = 'q' ] || [ ${1} = 'u10' ] || [ ${1} = 'v10' ] || [ ${1} = 'w10' ]; then
+    if [ ${1} = 'd2m' ] || [ ${1} = 'sp' ] || [ ${1} = 't2m' ] || [ ${1} = 't' ] || [ ${1} = 'q' ] || [ ${1} = 'u10' ] || [ ${1} = 'v10' ] || [ ${1} = 'w10' ] || [ ${1} = 'u' ] || [ ${1} = 'v' ] || [ ${1} = 'w' ]; then
         cll_mth_crr='time: point'
     elif [ ${1} = 'mcpr' ] || [ ${1} = 'mlspr' ] || [ ${1} = 'msdfswrf' ] || [ ${1} = 'msdrswrf' ] || [ ${1} = 'msdwlwrf' ] || [ ${1} = 'msdwswrf' ]; then
         cll_mth_crr='time: mean'
@@ -1032,28 +1034,30 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 	    cmd_t2m[${clm_idx}]="ncap2 -O --no_tmp_fl -s 't2m-=0.182' ${fl_t2m_mth[${clm_idx}]} ${fl_t2m_mth[${clm_idx}]}"
 	fi # !t2m
 
-	if [ ${var_nm[${fl_idx}]} = 'u10' ]; then
+	if [ ${var_nm[${fl_idx}]} = 'u10' ] || [ ${var_nm[${fl_idx}]} = 'u' ]; then
+	    # Wind component names: 10 m (u10,v10->w10) or model level, e.g., L136 (u,v->w)
+	    if [ ${var_nm[${fl_idx}]} = 'u' ]; then wnd_u='u'; wnd_v='v'; wnd_w='w'; wnd_lng='Wind speed at model level (e.g., L136, ~30 m)'; else wnd_u='u10'; wnd_v='v10'; wnd_w='w10'; wnd_lng='10 metre windspeed'; fi
 	    # Define required filenames/commands iff current input file is u10
 	    # This avoids repetition
 	    # Commands and filenames will be used iff both u10 and v10 are encountered
 
 	    # Shorter (quicker, ncap2) procedure to derive w10
-	    # 1. Append u10 from fl_wnd_znl to fl_wnd_mrd
+	    # 1. Copy v10 file to w10 file, then append u10 to it (one command, joined by &&)
 	    # 2. Compute w10=(u10^2+v10^2)^0.5
 	    # Also modify w10 metadata to contain correct long_name
-	    # 3. Exclude variables u10, v10 from fl_w10
+	    # 3. Exclude u and v components (u10,v10 or u,v) from wind speed file
 	    # NB: This "shorter" procedure requires only three commands and no extra (temporary) files
+	    # Same commands serve 10 m (u10,v10->w10) and model-level (u,v->w) wind via wnd_u/wnd_v/wnd_w
 
 	    # Construct filenames needed for derived fields
-	    fl_u10_mth[${clm_idx}]="${drc_out}/${drc_nm_wind}/${out_nm}.u10.${yyyy}-${mm}.nc"
-	    fl_v10_mth[${clm_idx}]="${drc_out}/${drc_nm_wind}/${out_nm}.v10.${yyyy}-${mm}.nc"
-	    fl_w10_mth[${clm_idx}]="${drc_out}/${drc_nm_wind}/${out_nm}.w10.${yyyy}-${mm}.nc"
+	    fl_wnd_u_mth[${clm_idx}]="${drc_out}/${drc_nm_wind}/${out_nm}.${wnd_u}.${yyyy}-${mm}.nc"
+	    fl_wnd_v_mth[${clm_idx}]="${drc_out}/${drc_nm_wind}/${out_nm}.${wnd_v}.${yyyy}-${mm}.nc"
+	    fl_wnd_w_mth[${clm_idx}]="${drc_out}/${drc_nm_wind}/${out_nm}.${wnd_w}.${yyyy}-${mm}.nc"
 
-	    cmd_wn0[${clm_idx}]="/bin/cp ${fl_v10_mth[${clm_idx}]} ${fl_w10_mth[${clm_idx}]}"
-	    cmd_wn1[${clm_idx}]="ncks -A --no_tmp_fl -C -v u10 ${fl_u10_mth[${clm_idx}]} ${fl_w10_mth[${clm_idx}]}"
-	    cmd_wn2[${clm_idx}]="ncap2 -O --no_tmp_fl -s 'w10=sqrt(u10^2+v10^2);w10@long_name=\"10 metre windspeed\"' ${fl_w10_mth[${clm_idx}]} ${fl_w10_mth[${clm_idx}]}"
-	    cmd_wn3[${clm_idx}]="ncks -O -x -v u10,v10 ${fl_w10_mth[${clm_idx}]} ${fl_w10_mth[${clm_idx}]}"
-#	    cmd_wn4[${clm_idx}]="/bin/rm -f ${fl_u10_mth[${clm_idx}]} ${fl_v10_mth[${clm_idx}]}"
+	    cmd_wn1[${clm_idx}]="/bin/cp ${fl_wnd_v_mth[${clm_idx}]} ${fl_wnd_w_mth[${clm_idx}]} && ncks -A --no_tmp_fl -C -v ${wnd_u} ${fl_wnd_u_mth[${clm_idx}]} ${fl_wnd_w_mth[${clm_idx}]}"
+	    cmd_wn2[${clm_idx}]="ncap2 -O -s '${wnd_w}=sqrt(${wnd_u}^2+${wnd_v}^2);${wnd_w}@long_name=\"${wnd_lng}\";${wnd_w}@standard_name=\"wind_speed\"' ${fl_wnd_w_mth[${clm_idx}]} ${fl_wnd_w_mth[${clm_idx}]}"
+	    cmd_wn3[${clm_idx}]="ncks -O -x -v ${wnd_u},${wnd_v} ${fl_wnd_w_mth[${clm_idx}]} ${fl_wnd_w_mth[${clm_idx}]}"
+#	    cmd_wn4[${clm_idx}]="/bin/rm -f ${fl_wnd_u_mth[${clm_idx}]} ${fl_wnd_v_mth[${clm_idx}]}"
 	fi # !u10
 
     done # !mth
@@ -1555,20 +1559,34 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 
     fi # !msdfswrf
 
+    # Wind family: 10 m (u10/v10 -> w10) and model level (u/v -> w) keep separate state
+    # wfi = year*10 + family (0 = 10 m, 1 = model level)
+    case ${var_nm[${fl_idx}]} in
+	u|v|w) wnd_fam_crr='ml'; wfi=$((10#${yyyy}*10+1)) ;;
+	u10|v10|w10) wnd_fam_crr='10m'; wfi=$((10#${yyyy}*10)) ;;
+	*) wnd_fam_crr=''; wfi=$((10#${yyyy}*10)) ;;
+    esac # !var_nm
+    if [ -n "${wnd_fam_crr}" ]; then
+	if [ -n "${wnd_fam_run}" ] && [ "${wnd_fam_run}" != "${wnd_fam_crr}" ]; then
+	    printf "${spt_nm}: ERROR 10 m (u10/v10) and model-level (u/v) wind inputs must be processed in separate runs\n"
+	    exit 1
+	fi # !wnd_fam_run
+	wnd_fam_run=${wnd_fam_crr}
+    fi # !wnd_fam_crr
     # Check whether necessary inputs to derive wind speed are present
-    if [ ${var_nm[${fl_idx}]} = 'v10' ]; then
-	v10[${yyyy}]='yes'
+    if [ ${var_nm[${fl_idx}]} = 'v10' ] || [ ${var_nm[${fl_idx}]} = 'v' ]; then
+	wnd_v_rdy[${wfi}]='yes'
     fi # !var_nm
-    if [ ${var_nm[${fl_idx}]} = 'u10' ]; then
-	u10[${yyyy}]='yes'
+    if [ ${var_nm[${fl_idx}]} = 'u10' ] || [ ${var_nm[${fl_idx}]} = 'u' ]; then
+	wnd_u_rdy[${wfi}]='yes'
     fi # !var_nm
 
-    if [ "${v10[${yyyy}]}" = 'yes' ] && [ "${u10[${yyyy}]}" = 'yes' ] && [ "${w10[${yyyy}]}" != 'yes' ]; then
+    if [ "${wnd_v_rdy[${wfi}]}" = 'yes' ] && [ "${wnd_u_rdy[${wfi}]}" = 'yes' ] && [ "${wnd_w_done[${wfi}]}" != 'yes' ]; then
 	
-	printf "\nDeriving wind speed variable w10 for year ${yyyy}...\n"
+	printf "\nDeriving wind speed variable ${wnd_w} for year ${yyyy}...\n"
 	[[ ${dbg_lvl} -ge 0 ]] && date_wnd=$(date +"%s")
     
-	printf "\nStep wn1: Append u10 to v10 file\n"
+	printf "\nStep wn1: Copy ${wnd_v} file to ${wnd_w} file and append ${wnd_u}\n"
 	[[ ${dbg_lvl} -ge 1 ]] && date_wn1=$(date +"%s")
 	let bch_nbr=$((12 / job_nbr))
 	for ((bch_idx=0;bch_idx<bch_nbr;bch_idx++)); do
@@ -1613,7 +1631,7 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 	    echo "Elapsed time to append zonal wind data to meridional wind file for year ${yyyy} = $((date_dff/60))m$((date_dff % 60))s"
 	fi # !dbg
 
-	printf "\nStep wn2: Create wind speed field w10\n"
+	printf "\nStep wn2: Create wind speed field ${wnd_w}\n"
 	[[ ${dbg_lvl} -ge 1 ]] && date_wn2=$(date +"%s")
 	let bch_nbr=$((12 / job_nbr))
 	for ((bch_idx=0;bch_idx<bch_nbr;bch_idx++)); do
@@ -1621,7 +1639,7 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 	    let clm_idx_srt=$(((bch_idx * job_nbr) + 1))
 	    let clm_idx_end=$((clm_idx_srt + job_nbr - 1))
 	    for ((clm_idx=clm_idx_srt;clm_idx<=clm_idx_end;clm_idx++)); do
-		printf "Create wind speed field w10 as sqrt(u10^2+v10^2) for year ${yyyy} month ${clm_idx} ...\n"
+		printf "Create wind speed field ${wnd_w} as sqrt(${wnd_u}^2+${wnd_v}^2) for year ${yyyy} month ${clm_idx} ...\n"
 		if [ ${dbg_lvl} -ge 1 ]; then
 		    echo ${cmd_wn2[${clm_idx}]}
 		fi # !dbg
@@ -1703,8 +1721,8 @@ for ((fl_idx=0;fl_idx<fl_nbr;fl_idx++)); do
 	    echo "Elapsed time to exclude zonal+meridional fields from wind speed file for year ${yyyy} = $((date_dff/60))m$((date_dff % 60))s"
 	fi # !dbg
 
-	# Indicate that w10 has already been created
-	w10[${yyyy}]='yes'
+	# Indicate that wind speed for this year and wind family has already been created
+	wnd_w_done[${wfi}]='yes'
 	
 	if [ ${dbg_lvl} -ge 0 ]; then
 	    date_crr=$(date +"%s")
