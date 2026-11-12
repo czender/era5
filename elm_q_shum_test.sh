@@ -19,7 +19,7 @@ E3SM_SRC=${E3SM_SRC:-${HOME}/E3SM}                     # E3SM source checkout
 CASE=${1:-${SCRATCH}/cases/era5_q_test}                # Case directory
 PROJECT=${PROJECT:-e3sm}                               # NERSC CPU account
 D=/global/cfs/cdirs/e3sm/inputdata/atm/datm7/atm_forcing.datm7.ERA.6HRLY.0.25d.v5.c180614
-QDIR=${QDIR:-qbot_new}                                 # Directory with L136 q files
+QDIR=${QDIR:-qbot_30m}                                 # Directory with L136 q files
 YR=2000                                                # Only 2000 has been processed so far
 STRM=datm.streams.txt.ERA56HR.d2m                      # Stream that normally supplies dew point
 
