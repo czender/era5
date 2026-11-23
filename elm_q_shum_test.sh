@@ -44,8 +44,18 @@ cd ${CASE}
 ./preview_namelists > /dev/null
 cp CaseDocs/${STRM} user_${STRM}
 chmod u+w user_${STRM}
+# Each sed below edits only the lines between <fieldInfo> and </fieldInfo>, so the
+# <domainInfo> section (grid file) is never touched
+# (1) Variable mapping, file name on the left and DATM field name on the right:
+#     "d2m  tdew" becomes "q  shum". DATM then reads the file variable q as specific
+#     humidity (shum) and uses it directly instead of converting dew point.
+#     \b keeps whole words only; \([[:space:]]\+\) keeps the original spacing via \1
 sed -i '/<fieldInfo>/,/<\/fieldInfo>/s/\bd2m\([[:space:]]\+\)tdew\b/q\1shum/' user_${STRM}
+# (2) Data directory: replace the trailing /tdew in <filePath> with /${QDIR}.
+#     # is the sed delimiter because the path contains /; \$ anchors the match to the end of the line
 sed -i "/<fieldInfo>/,/<\/fieldInfo>/s#/tdew[[:space:]]*\$#/${QDIR}#" user_${STRM}
+# (3) File names: elmforc.ERA5.c2018.0.25d.d2m.${YR}-MM.nc becomes
+#     elmforc.ERA5.L136.0.25d.q.${YR}-MM.nc for all 12 months. Dots are escaped (\.) so they match literally
 sed -i "/<fieldInfo>/,/<\/fieldInfo>/s/elmforc\.ERA5\.c2018\.0\.25d\.d2m\.${YR}-/elmforc.ERA5.L136.0.25d.q.${YR}-/" user_${STRM}
 
 # Step 4: ELM output for the sanity checks
